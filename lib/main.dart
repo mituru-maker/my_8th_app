@@ -155,19 +155,53 @@ class _ImageAnalyzerPageState extends State<ImageAnalyzerPage> {
                   return;
                 }
 
-                final success = await _apiService.saveApiKey(apiKeyController.text.trim());
-                if (success) {
-                  setState(() {
-                    _isConfigured = _apiService.isConfigured;
-                  });
-                  Navigator.of(context).pop(true);
+                // Show loading indicator
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (context) => const AlertDialog(
+                    content: Row(
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(width: 16),
+                        Text('保存中...'),
+                      ],
+                    ),
+                  ),
+                );
+
+                try {
+                  final success = await _apiService.saveApiKey(apiKeyController.text.trim());
+                  
+                  // Close loading dialog
+                  Navigator.of(context).pop();
+                  
+                  if (success) {
+                    setState(() {
+                      _isConfigured = _apiService.isConfigured;
+                    });
+                    Navigator.of(context).pop(true);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('APIキーを保存しました'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('APIキーの保存に失敗しました。もう一度お試しください。'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  // Close loading dialog
+                  Navigator.of(context).pop();
+                  
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('APIキーを保存しました')),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('APIキーの保存に失敗しました'),
+                    SnackBar(
+                      content: Text('エラーが発生しました: $e'),
                       backgroundColor: Colors.red,
                     ),
                   );

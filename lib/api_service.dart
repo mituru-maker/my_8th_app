@@ -14,13 +14,26 @@ class ApiService {
 
   // Initialize: called on app startup or after settings change
   Future<void> initialize() async {
-    final prefs = await SharedPreferences.getInstance();
-    // Force reload latest value
-    await prefs.reload();
-    _apiKey = prefs.getString(AppConstants.apiKeyStorageKey);
-    
-    // Don't auto-initialize model, require user to set API key each time
-    print('ApiService: Initialized (API key requires manual input)');
+    try {
+      print('ApiService: Initializing...');
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Force reload latest value
+      await prefs.reload();
+      _apiKey = prefs.getString(AppConstants.apiKeyStorageKey);
+      
+      print('ApiService: Initialization complete');
+      print('ApiService: API key found: ${_apiKey != null ? "yes" : "no"}');
+      if (_apiKey != null) {
+        print('ApiService: API key length: ${_apiKey!.length}');
+      }
+      
+      // Don't auto-initialize model, require user to set API key each time
+      print('ApiService: Ready for manual API key input');
+    } catch (e) {
+      print('ApiService: Initialization error: $e');
+      _apiKey = null;
+    }
   }
 
   void _initializeModel() {
@@ -63,18 +76,35 @@ class ApiService {
 
   Future<bool> saveApiKey(String apiKey) async {
     try {
+      print('ApiService: Attempting to save API key...');
       final prefs = await SharedPreferences.getInstance();
-      final result = await prefs.setString(AppConstants.apiKeyStorageKey, apiKey);
-      await prefs.reload(); // For immediate reflection in web version
       
-      if (result) {
+      // Clear any existing key first
+      await prefs.remove(AppConstants.apiKeyStorageKey);
+      
+      // Save new key
+      final result = await prefs.setString(AppConstants.apiKeyStorageKey, apiKey);
+      
+      // Force reload for web
+      await prefs.reload();
+      
+      // Verify the key was saved
+      final savedKey = prefs.getString(AppConstants.apiKeyStorageKey);
+      
+      if (result && savedKey == apiKey) {
         _apiKey = apiKey;
-        // Don't auto-initialize model, wait for user to trigger analysis
-        print('ApiService: API Key saved (model will be initialized on first use)');
+        print('ApiService: API Key saved successfully');
+        print('ApiService: Key length: ${apiKey.length}');
+        return true;
+      } else {
+        print('ApiService: Failed to save API key');
+        print('ApiService: Save result: $result');
+        print('ApiService: Saved key verification: ${savedKey != null ? "success" : "failed"}');
+        return false;
       }
-      return result;
     } catch (e) {
       print('ApiService: Error saving API key: $e');
+      print('ApiService: Error type: ${e.runtimeType}');
       return false;
     }
   }
@@ -187,5 +217,10 @@ class ApiService {
   }
 
   String? get apiKey => _apiKey;
-  bool get isConfigured => _apiKey != null && _apiKey!.isNotEmpty && _model != null;
+  bool get isConfigured {
+    // Check if we have a non-empty API key
+    final hasKey = _apiKey != null && _apiKey!.isNotEmpty;
+    print('ApiService: isConfigured check - hasKey: $hasKey');
+    return hasKey;
+  }
 }

@@ -19,13 +19,8 @@ class ApiService {
     await prefs.reload();
     _apiKey = prefs.getString(AppConstants.apiKeyStorageKey);
     
-    if (_apiKey != null && _apiKey!.isNotEmpty) {
-      print('ApiService: API Key loaded from storage.');
-      _initializeModel();
-    } else {
-      print('ApiService: No API Key found.');
-      _model = null; // Clear model if no key
-    }
+    // Don't auto-initialize model, require user to set API key each time
+    print('ApiService: Initialized (API key requires manual input)');
   }
 
   void _initializeModel() {
@@ -74,8 +69,8 @@ class ApiService {
       
       if (result) {
         _apiKey = apiKey;
-        _initializeModel();
-        print('ApiService: API Key saved and model re-initialized.');
+        // Don't auto-initialize model, wait for user to trigger analysis
+        print('ApiService: API Key saved (model will be initialized on first use)');
       }
       return result;
     } catch (e) {
@@ -105,8 +100,15 @@ class ApiService {
     // Reload latest key just before execution
     await initialize();
     
+    if (_apiKey == null || _apiKey!.isEmpty) {
+      throw Exception('APIキーが設定されていません。設定画面でAPIキーを入力してください。');
+    }
+
+    // Initialize model on first use
+    _initializeModel();
+    
     if (_model == null) {
-      throw Exception('APIキーが有効ではありません。設定画面で保存してください。');
+      throw Exception('モデルの初期化に失敗しました。APIキーを確認してください。');
     }
 
     // Try with current model first, then fallback to other models if needed
@@ -140,6 +142,10 @@ class ApiService {
         final result = response.text ?? 'レスポンスが空でした。';
         
         print('ApiService: Successfully analyzed with: $cleanModelName');
+        
+        // Clear API key after successful use for security
+        await clearApiKey();
+        
         return result;
         
       } catch (e) {
@@ -152,6 +158,15 @@ class ApiService {
     }
     
     throw Exception('有効なモデルが見つかりませんでした');
+  }
+
+  // Clear API key for security
+  Future<void> clearApiKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(AppConstants.apiKeyStorageKey);
+    _apiKey = null;
+    _model = null;
+    print('ApiService: API key cleared for security');
   }
 
   // Legacy methods for backward compatibility

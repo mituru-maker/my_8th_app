@@ -109,9 +109,6 @@ class _ImageAnalyzerPageState extends State<ImageAnalyzerPage> {
     final TextEditingController apiKeyController = TextEditingController();
 
     await _apiService.initialize();
-    if (_apiService.apiKey != null) {
-      apiKeyController.text = _apiService.apiKey!;
-    }
 
     final result = await showDialog<bool>(
       context: context,
@@ -122,6 +119,11 @@ class _ImageAnalyzerPageState extends State<ImageAnalyzerPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text('Gemini APIキーを入力してください:'),
+              const SizedBox(height: 8),
+              const Text(
+                '※セキュリティのため、使用後にAPIキーは自動的に削除されます',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
               const SizedBox(height: 16),
               TextField(
                 controller: apiKeyController,
@@ -143,8 +145,21 @@ class _ImageAnalyzerPageState extends State<ImageAnalyzerPage> {
             ),
             TextButton(
               onPressed: () async {
+                if (apiKeyController.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('APIキーを入力してください'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+
                 final success = await _apiService.saveApiKey(apiKeyController.text.trim());
                 if (success) {
+                  setState(() {
+                    _isConfigured = _apiService.isConfigured;
+                  });
                   Navigator.of(context).pop(true);
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('APIキーを保存しました')),
@@ -165,11 +180,9 @@ class _ImageAnalyzerPageState extends State<ImageAnalyzerPage> {
       },
     );
 
-    // Update isConfigured when returning from settings with success
     if (result == true) {
-      await _apiService.initialize(); // Reload latest key
       setState(() {
-        _isConfigured = _apiService.isConfigured; // Update warning display
+        _isConfigured = _apiService.isConfigured;
       });
     }
   }

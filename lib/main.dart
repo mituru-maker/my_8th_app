@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 import 'dart:typed_data';
 import 'api_service.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
 
 void main() {
   runApp(const MyApp());
@@ -33,23 +31,24 @@ class ImageAnalyzerPage extends StatefulWidget {
 }
 
 class _ImageAnalyzerPageState extends State<ImageAnalyzerPage> {
+  final ApiService _apiService = ApiService();
   final ImagePicker _picker = ImagePicker();
   XFile? _selectedImage;
   Uint8List? _imageBytes;
   String _analysisResult = '';
   bool _isAnalyzing = false;
-  String? _apiKey;
+  bool _isConfigured = false;
 
   @override
   void initState() {
     super.initState();
-    _loadApiKey();
+    _initializeApp();
   }
 
-  Future<void> _loadApiKey() async {
-    final apiKey = await ApiService.getApiKey();
+  Future<void> _initializeApp() async {
+    await _apiService.initialize();
     setState(() {
-      _apiKey = apiKey;
+      _isConfigured = _apiService.isConfigured;
     });
   }
 
@@ -73,7 +72,7 @@ class _ImageAnalyzerPageState extends State<ImageAnalyzerPage> {
       return;
     }
 
-    if (_apiKey == null || _apiKey!.isEmpty) {
+    if (!_isConfigured) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('APIキーが設定されていません。設定ボタンからAPIキーを入力してください。'),
@@ -89,32 +88,13 @@ class _ImageAnalyzerPageState extends State<ImageAnalyzerPage> {
     });
 
     try {
-      String modelName = 'gemini-2.0-flash-exp';
-      GenerativeModel model;
-      
-      try {
-        model = GenerativeModel(
-          model: modelName,
-          apiKey: _apiKey!,
-        );
-      } catch (e) {
-        // Fallback to gemini-1.5-flash if the experimental model is not available
-        modelName = 'gemini-1.5-flash';
-        model = GenerativeModel(
-          model: modelName,
-          apiKey: _apiKey!,
-        );
-      }
-
-      final imagePart = DataPart('image/jpeg', _imageBytes!);
-
-      final prompt = TextPart('Please analyze this image and provide a detailed description in Japanese.');
-      final response = await model.generateContent([
-        Content.multi([prompt, imagePart])
-      ]);
+      final result = await _apiService.analyzeImage(
+        prompt: 'Please analyze this image and provide a detailed description in Japanese.',
+        imageBytes: _imageBytes!,
+      );
 
       setState(() {
-        _analysisResult = response.text ?? 'No response received';
+        _analysisResult = result;
         _isAnalyzing = false;
       });
     } catch (e) {
@@ -125,10 +105,15 @@ class _ImageAnalyzerPageState extends State<ImageAnalyzerPage> {
     }
   }
 
-  void _showSettingsDialog() {
-    final TextEditingController apiKeyController = TextEditingController(text: _apiKey);
+  void _showSettingsDialog() async {
+    final TextEditingController apiKeyController = TextEditingController();
 
-    showDialog(
+    await _apiService.initialize();
+    if (_apiService.apiKey != null) {
+      apiKeyController.text = _apiService.apiKey!;
+    }
+
+    final result = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
@@ -152,20 +137,26 @@ class _ImageAnalyzerPageState extends State<ImageAnalyzerPage> {
           actions: [
             TextButton(
               onPressed: () {
-                Navigator.of(context).pop();
+                Navigator.of(context).pop(false);
               },
               child: const Text('キャンセル'),
             ),
             TextButton(
               onPressed: () async {
-                await ApiService.saveApiKey(apiKeyController.text);
-                setState(() {
-                  _apiKey = apiKeyController.text;
-                });
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('APIキーを保存しました')),
-                );
+                final success = await _apiService.saveApiKey(apiKeyController.text.trim());
+                if (success) {
+                  Navigator.of(context).pop(true);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('APIキーを保存しました')),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('APIキーの保存に失敗しました'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
               },
               child: const Text('保存'),
             ),
@@ -173,6 +164,14 @@ class _ImageAnalyzerPageState extends State<ImageAnalyzerPage> {
         );
       },
     );
+
+    // Update isConfigured when returning from settings with success
+    if (result == true) {
+      await _apiService.initialize(); // Reload latest key
+      setState(() {
+        _isConfigured = _apiService.isConfigured; // Update warning display
+      });
+    }
   }
 
   @override
@@ -183,7 +182,9 @@ class _ImageAnalyzerPageState extends State<ImageAnalyzerPage> {
         title: const Text('AI 画像分析'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings),
+            icon: Icon(
+              _isConfigured ? Icons.settings : Icons.settings_outlined,
+            ),
             onPressed: _showSettingsDialog,
           ),
         ],
@@ -193,7 +194,7 @@ class _ImageAnalyzerPageState extends State<ImageAnalyzerPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (_apiKey == null || _apiKey!.isEmpty)
+            if (!_isConfigured)
               Container(
                 padding: const EdgeInsets.all(16),
                 margin: const EdgeInsets.only(bottom: 16),
